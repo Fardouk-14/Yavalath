@@ -5,11 +5,11 @@ from Model import AI_Player
 
 def jouer_contre_champion():
     # 1. Trouver le modèle
-    model_file = "best.pth"
+    model_file = "AI/best.pth"
     if not os.path.exists(model_file):
         # Essayer un autre nom si best.pth n'existe pas
-        if os.path.exists("champion_final.pth"):
-            model_file = "champion_final.pth"
+        if os.path.exists("AI/champion_final.pth"):
+            model_file = "AI/champion_final.pth"
         else:
             print("Erreur : Aucun fichier de modèle trouvé ('best.pth' ou 'champion_final.pth').")
             print("Veuillez d'abord exécuter Model.py pour entraîner une IA.")
@@ -37,14 +37,14 @@ def jouer_contre_champion():
                 print("\nVous êtes le Joueur 1 (Bleu). Bonne chance !")
                 # Vous (1) vs IA (2)
                 p1 = human_player(1, "blue")
-                p2 = AI_Player(2, "red", model_path=model_file, train_mode=False)
+                p2 = AI_Player(player_id=2, color="red", model_path=model_file)
                 # Lancement
                 plateau.new_game([p1, p2], parties=1, display=True)
                 
             elif choix == '2':
                 print("\nL'IA est le Joueur 1 (Rouge). Attention, elle est rapide !")
                 # IA (1) vs Vous (2)
-                p1 = AI_Player(1, "red", model_path=model_file, train_mode=False)
+                p1 = AI_Player(player_id=1, color="red", model_path=model_file)
                 p2 = human_player(2, "blue")
                 # Lancement
                 plateau.new_game([p1, p2], parties=1, display=True)

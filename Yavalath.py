@@ -70,14 +70,30 @@ class player:
     def __init__(self, id, color):
         self.id = id
         self.color = color
-        self.has_lost = False
-        self.wins = 0
-        self.losses = 0
-        self.draws = 0
-        self.has_won = False
+        self.reset()
     
     def get_id(self):
         return self.id
+    
+    def get_my_cases(self):
+        return self.my_cases
+    
+    def mémoriser_case(self, plateau, case_id):
+        idx = plateau.id_to_index.get(case_id)
+        if idx is not None:
+            self.my_cases[idx] = True
+
+    def new_game(self, pondération=1):
+        self.has_lost = False
+        self.has_won = False
+        self.my_cases=[False]*61
+        self.pondération = pondération
+    
+    def reset(self):
+        self.wins = 0
+        self.losses = 0
+        self.draws = 0
+        self.new_game()
     
     def get_color(self):
         return self.color
@@ -85,11 +101,11 @@ class player:
     def set_lost(self):
         if not self.has_lost:
             self.has_lost = True
-            self.losses += 1
+            self.losses += 1*self.pondération
     def set_won(self):
         if not self.has_won:
             self.has_won = True
-            self.wins += 1
+            self.wins += 1*self.pondération
     #retourne un ID de coup à jouer
     def jouer(self, plateau):
         return None
@@ -156,10 +172,14 @@ class human_player(player):
                     print("Coup invalide, essayez à nouveau.")
             except ValueError:
                 print("Entrée invalide, veuillez entrer un nombre entier.")
+        #mémorise la case jouée
+        self.mémoriser_case(plateau, choix)
         return choix
         
 class Yavalath:
-    
+    _ALL_LEGAL = [True]*61  # Constante pour les premiers coups
+    _Directions =[(1,0), (0,1), (-1,1)]
+    _sqrt_3_half = (3**0.5)/2
     def __init__(self):
         self.cases_by_id={}
         self.cases_by_coord={}
@@ -169,10 +189,9 @@ class Yavalath:
         # 1. Dictionnaire pour trouver l'index (0-60) à partir de l'ID rapidement
         self.id_to_index = {cases_id: i for i, cases_id in enumerate(self.sorted_cases_id)}
         # 2. Le masque booléen [True, True, True...]
-        self.mask_legal = [True] * 61
+        self.mask_legal = Yavalath._ALL_LEGAL.copy()
         
         # On garde votre liste triée pour get_empty_cases()
-        self.free_cases_sorted=self.sorted_cases_id.copy()
         self.free_cases_sorted=self.sorted_cases_id.copy()
         self.players=[]
         self.coups=0
@@ -216,7 +235,7 @@ class Yavalath:
                 # conversion hex -> coordonnée x,y pour plot
                 q, r = case_obj.get_coordonnées()
                 x = q + r/2
-                y = r * (3**0.5/2)  # hauteur d'un hexagon parfait
+                y = r * Yavalath._sqrt_3_half  # hauteur d'un hexagon parfait
                 self.ax.scatter(x, y, s=600, c=case_obj.player.get_color() if case_obj.player else 'lightblue', edgecolors='k')
                 self.ax.text(x, y, f"{code:02d}", ha='center', va='center')
             
@@ -228,36 +247,39 @@ class Yavalath:
     def get_case_by_id(self, id):
         return self.cases_by_id.get(id, None)
     
+    #retourne la liste des cases occupées par un joueur ordonnée selon les IDs
+    def get_case_occupied_by(self, player):
+        return player.get_my_cases()
+
     def get_all_cases(self):
         return list(self.cases_by_id)
     
     def reset_plateau(self):
         for case in self.cases_by_id.values():
-            case.player = None        
+            case.player = None
         
-        self.mask_legal = [True] * 61
+        self.mask_legal = Yavalath._ALL_LEGAL.copy()
         for player in self.players:
-            player.has_lost = False
-            player.has_won = False
+            player.new_game(self.pondération)
     def is_full(self):
         return not any(self.mask_legal)
     
     def get_empty_cases(self):
-        return [self.cases_by_id[id_val] 
+        # Retourne la liste des cases libres en utilisant le masque booléen
+        return [id_val
                 for id_val, is_free in zip(self.sorted_cases_id, self.mask_legal) 
                 if is_free]
         
     def legal_moves(self):
         if self.coups <= 1:
-            return [True]*61
+            return Yavalath._ALL_LEGAL[:]
         return self.mask_legal[:]
     #si un joureur a aligné 4 pions, il gagne
     def detect_win_loss(self, last_move_id=None):
-        directions = [(1,0), (0,1), (-1,1)]
-
+        
         # Optimisation : on ne vérifie que la case qui vient d'être jouée
         if last_move_id is not None:
-            case_start = self.get_case_by_id(last_move_id)
+            case_start = self.cases_by_id.get(last_move_id, None)
             if not case_start: return # Sécurité
             cases_to_check = [case_start]
         else:
@@ -268,27 +290,31 @@ class Yavalath:
         for case in cases_to_check:
             if case.is_occupied():
                 player = case.player
-                for dq, dr in directions:
+                for dq, dr in Yavalath._Directions:
                     count = 1
                     # vérifier dans une direction
                     q, r = case.get_coordonnées()
-                    for step in range(1, 4):
-                        next_q = q + dq * step
-                        next_r = r + dr * step
-                        next_case = self.cases_by_coord.get((next_q, next_r), None)
-                        if next_case and next_case.player == player:
-                            count += 1
-                        else:
-                            break
-                    # vérifier dans la direction opposée
-                    for step in range(1, 4):
-                        next_q = q - dq * step
-                        next_r = r - dr * step
-                        next_case = self.cases_by_coord.get((next_q, next_r), None)
-                        if next_case and next_case.player == player:
-                            count += 1
-                        else:
-                            break
+                    positif=True
+                    negatif=True
+                    step=1
+                    while (positif or negatif) and (step <= 3):
+                        if positif:
+                            next_q = q + dq * step
+                            next_r = r + dr * step
+                            next_case = self.cases_by_coord.get((next_q, next_r), None)
+                            if next_case and next_case.player == player:
+                                count += 1
+                            else:
+                                positif=False
+                        if negatif:
+                            next_q = q - dq * step
+                            next_r = r - dr * step
+                            next_case = self.cases_by_coord.get((next_q, next_r), None)
+                            if next_case and next_case.player == player:
+                                count += 1
+                            else:
+                                negatif=False
+                        step += 1
                     if count == 3:
                         player.set_lost()
                     if count >= 4:
@@ -297,26 +323,20 @@ class Yavalath:
     
     def jouer_coup(self, case_id, player):
         case = self.get_case_by_id(case_id)
-        if case and not case.is_occupied() or self.coups == 1:
+        if case and (not case.is_occupied() or self.coups == 1):
             case.player = player
              # AJOUT DE GESTION DE LISTE
             # Mise à jour du masque booléen en O(1) grâce à l'index
-            if case_id in self.id_to_index:
-                idx = self.id_to_index[case_id]
+            idx = self.id_to_index.get(case_id, None)
+            if idx is not None:
                 self.mask_legal[idx] = False
             return True
         return False
         
-    def new_game(self, players, parties=1, display=True, coups_aleatoires=0):
+    def new_game(self, players, parties=1, display=True, coups_aleatoires=0,pondération=1):
+        self.pondération=pondération
         self.players = players
         self.display = display
-        for player in self.players:
-            player.wins = 0
-            player.losses = 0
-            player.draws = 0
-            player.has_lost = False
-            player.has_won = False
-
         try:
             for i in range(parties):
                 if self.display:
@@ -331,9 +351,9 @@ class Yavalath:
                         empty_cases = self.get_empty_cases()
                         if not empty_cases:
                             break
-                        random_case = choice(empty_cases)
+                        random_case_id = choice(empty_cases)
                         random_player = self.players[cur_player]
-                        self.jouer_coup(random_case.get_id(), random_player)
+                        self.jouer_coup(random_case_id, random_player)
                         self.coups += 1
                         cur_player = (cur_player + 1) % len(self.players)
                     if self.display:
@@ -356,8 +376,22 @@ class Yavalath:
         # on analyse le plateau après chaque coup
         # on affiche le plateau après analyse
         # on termine la partie si un joueur a gagné, s'il ne reste qu'un joueur qui peut jouer ou si le plateau est plein
-        while True:
-            for player in self.players:
+        alive_players = self.players.copy()
+        while len(alive_players) > 0:
+            alive_players = [p for p in self.players if not p.has_lost]
+        
+            if len(alive_players) == 0:
+                if self.display:
+                    print("Tous les joueurs ont perdu!")
+                return
+            
+            if len(alive_players) == 1:
+                alive_players[0].set_won()
+                if self.display:
+                    print(f"Le joueur {alive_players[0].get_id()} a gagné!")
+                return
+        
+            for player in alive_players:
                 if not player.has_lost:
                     move_id=player.jouer(self)
                     self.coups += 1
@@ -368,26 +402,18 @@ class Yavalath:
                     #vérifie si un joueur a gagné
                     if player.has_won:
                         for p in self.players:
-                            if p != player:
+                            if p != player and not p.has_won and not p.has_lost:
                                 p.set_lost()
                         if self.display:
                             print(f"Le joueur {player.get_id()} a gagné la partie!")
                         return
-                #vérifie s'il ne reste qu'un joueur qui n'a pas perdu
-                if len(self.players) - len([p for p in self.players if p.has_lost]) <=1 :
-                    for p in self.players:
-                        if not p.has_lost:
-                            p.set_won()
-                            if self.display:
-                                print(f"Le joueur {p.get_id()} a gagné la partie!")
-                    return
-                #vérifie si le plateau est plein
-                if self.is_full():
-                    for player in self.players:
-                        player.draws += 1 if (not player.has_lost and not player.has_won) else 0
-                    if self.display:
-                        print("Le plateau est plein, la partie se termine par un match nul.")
-                    return
+                    #vérifie si le plateau est plein
+                    if self.is_full():
+                        for player in self.players:
+                            player.draws += 1 if (not player.has_lost and not player.has_won) else 0
+                        if self.display:
+                            print("Le plateau est plein, la partie se termine par un match nul.")
+                        return
 
 
 class RobotPlayer(player):
@@ -397,8 +423,9 @@ class RobotPlayer(player):
     def jouer(self, plateau):
         empty_cases = plateau.get_empty_cases()
         #choisit une case vide au hasard
-        choix = choice(empty_cases).get_id() if empty_cases else None
+        choix = choice(empty_cases) if empty_cases else None
         if plateau.jouer_coup(choix, self):
+            self.mémoriser_case(plateau, choix)
             return choix
             
         return None

@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import random
 import os
 import time
@@ -10,8 +11,9 @@ from Yavalath import player
 from Yavalath import human_player
 
 
+
 class YavalathNN(nn.Module):
-    def __init__(self, input_size=61, output_size=61, hidden_size=128):
+    def __init__(self, input_size=61*4, output_size=61, hidden_size=128):
         super(YavalathNN, self).__init__()
         
         self.fc1 = nn.Linear(input_size, hidden_size)
@@ -61,11 +63,19 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 class AI_Player(player):
-    def __init__(self, player_id, color, model_path=None, train_mode=False):
-        super().__init__(player_id, color)
-        self.model = YavalathNN()
-        if model_path:
+
+    def __init__(self, model_path=None, train_mode=False,model=None, player_id=None, color=None):
+        if not color :
+            color="red"
+        #génère un hash pour générer un id unique
+        super().__init__(id(self), color)
+        if model is not None:
+            self.model = model
+        elif model_path:
+            self.model = YavalathNN()
             self.model.load_model(model_path)
+        else:
+            self.model = YavalathNN()
         #else:
             #print(f"Joueur {player_id}: Modèle initialisé aléatoirement.")
 
@@ -80,7 +90,8 @@ class AI_Player(player):
 
     def jouer(self, plateau):
         move=self.choisir_case(plateau)
-        plateau.jouer_coup(move, self)
+        if plateau.jouer_coup(move, self):
+            self.mémoriser_case(plateau, move)
         return move
     
     def choisir_case(self, plateau):
@@ -88,15 +99,27 @@ class AI_Player(player):
         #attribuer un état à chaque case qui sera utilisé comme entrée pour chaque noeud du réseau de neurones
         #parcourir le dictionnaire plateau.get_all_cases() dans l'ordre des clés (de la plus petite à la plus grande)
         #ajouter 0 à la case si elle est vide, -1 si elle est occupée par soi-même, l'ID du joueur si elle est occupée par un autre joueur
-        plateau_cases=plateau.sorted_cases_id
-        for case_id in plateau_cases:
-            case = plateau.get_case_by_id(case_id)
-            if case.is_empty():
-                state.append(0)
-            elif case.ennemy_of(self):
-                state.append(case.get_player_id())
-            else:
-                state.append(-1)
+        state+=plateau.legal_moves()
+        state+=self.get_my_cases()
+        # Canaux 3 et 4 : Adversaires (ordonnés par ID pour être déterministe)
+        other_players = [p for p in plateau.players if p.get_id() != self.get_id()]
+        other_players.sort(key=lambda p: p.get_id())  # Ordre déterministe !
+        
+        for p in other_players:
+            state += list(plateau.get_case_occupied_by(p))
+        
+        # Padding si moins de 2 adversaires (partie à 2 joueurs)
+        while len(state) < 61 * 4:
+            state += [False] * 61
+        # plateau_cases=plateau.sorted_cases_id
+        # for case_id in plateau_cases:
+        #     case = plateau.get_case_by_id(case_id)
+        #     if case.is_empty():
+        #         state.append(0)
+        #     elif case.ennemy_of(self):
+        #         state.append(case.get_player_id())
+        #     else:
+        #         state.append(-1)
         
         state_tensor = torch.FloatTensor(state).unsqueeze(0)  # Ajouter une dimension batch
         # En mode jeu (eval), on désactive le calcul des gradients pour aller plus vite
@@ -110,7 +133,7 @@ class AI_Player(player):
         # Masquage
         # tableau des coups légaux (True légal/False illégal)
         legal_moves = plateau.legal_moves()
-        #atribuler -inf aux sorties correspondant aux coups illégaux
+        #atributer -inf aux sorties correspondant aux coups illégaux
         for idx, legal in enumerate(legal_moves):
             if not legal:
                 output[0][idx] = float('-inf')
@@ -119,17 +142,17 @@ class AI_Player(player):
 
         # Exploration vs Exploitation (Epsilon-Greedy - utile pour l'entraînement)
         # Si on entraîne, parfois on joue au hasard pour découvrir de nouveaux coups
-        if self.train_mode and random.random() < 0.1: # 10% de chance d'explorer
-             # On filtre quand même les coups illégaux
-             legal_moves = [idx for idx, cid in enumerate(plateau_cases) if plateau.get_case_by_id(cid).is_empty()]
-             if legal_moves:
-                 action_index = random.choice(legal_moves)
-             else:
-                 action_index = torch.argmax(output, dim=1).item() # Fallback
+        if self.train_mode and random.random() < 0.1:
+            # legal_moves est une liste de booléens
+            legal_indices = [idx for idx, is_legal in enumerate(legal_moves) if is_legal]
+            if legal_indices:
+                action_index = random.choice(legal_indices)
+            else:
+                action_index = torch.argmax(output, dim=1).item()
         else:
             action_index = torch.argmax(output, dim=1).item()
             
-        move = plateau_cases[action_index]
+        move = plateau.sorted_cases_id[action_index]
         return move
     
 class EvolutionTrainer:
@@ -165,6 +188,9 @@ class EvolutionTrainer:
             for _ in range(self.population_size - 1):
                 model = YavalathNN()
                 self.population.append(model)
+        self.players = [AI_Player(model=model, train_mode=False) for model in self.population]
+        for player in self.players:
+            player.reset()
 
     def mutate(self, model):
         """Crée une copie mutée d'un modèle"""
@@ -187,37 +213,25 @@ class EvolutionTrainer:
         child.load_state_dict(child_state)
         return child
 
-    def evaluate_match(self, model_a, model_b):
-        """Joue un match entre deux modèles et retourne le gagnant (1 ou 2, 0 si nul)"""
-                
-        # On crée les joueurs temporaires utilisant ces cerveaux
-        # Attention aux IDs et couleurs, c'est purement technique ici
-        p1 = AI_Player(1, "red", train_mode=False)
-        p1.model = model_a # On injecte le cerveau A
+    def evaluate_match(self, p1, p2, p3):
+        """Joue un match entre trois modèles et retourne le gagnant (1, 2, 3, 0 si nul)"""
         
-        p2 = AI_Player(2, "blue", train_mode=False)
-        p2.model = model_b # On injecte le cerveau B
-          # Juste pour s'assurer que le plateau est prêt
         # On lance la partie (il faut modifier légèrement Yavalath pour qu'il ne fasse pas de print/input bloquants)
         # Idéalement, play_game devrait retourner l'ID du gagnant sans input utilisateur
-        self.plateau.new_game([p1, p2], parties=1, display=False) 
-        awins = p1.wins*3
-        bwins = p2.wins*3
-        self.plateau.new_game([p2, p1], parties=1, display=False) 
-        awins += p1.wins*3
-        bwins += p2.wins*3
+        self.plateau.new_game([p1, p2], parties=1, display=False, pondération=4)
+        self.plateau.new_game([p2, p1], parties=1, display=False, pondération=4) 
+        # On fait jouer des parties déjà commencées pour éviter l'overfitting
         self.plateau.new_game([p1, p2], parties=1, display=False, coups_aleatoires=4) 
-        awins += p1.wins
-        bwins += p2.wins
         self.plateau.new_game([p2, p1], parties=1, display=False, coups_aleatoires=4) 
-        awins += p1.wins
-        bwins += p2.wins
+        # choisi un 3ème joueur aléatoire pour mélanger les choses avec un ordre aléatoire
+        for order in [[p1, p2, p3], [p3, p1, p2], [p2, p3, p1]]:
+            self.plateau.new_game(order, parties=1, display=False, pondération=2)
 
         # Ce morceau dépend de comment new_game stocke le résultat
         # Supposons qu'on regarde les wins
-        if awins > bwins: return model_a
-        if bwins > awins: return model_b
-        return None # Match nul
+        # if p1.wins > p2.wins: return model_a
+        # if p2.wins > p1.wins: return model_b
+        # return None # Match nul
 
     def run_generation(self, plateau_cls):
         """Fait jouer la population en tournoi"""
@@ -225,47 +239,52 @@ class EvolutionTrainer:
         self.generation += 1
         print(f"--- Génération {self.generation} ---")
         
-        random.shuffle(self.population)
-        next_gen = []
-        winners = {}
+        random.shuffle(self.players)
+        
+        
         # Tournoi : on prend les IA par paires
         # on fait jouer chaque IA contre toutes les autres
-        for i in range(len(self.population)):
-            for j in range(i + 1, len(self.population)):
-                p1 = self.population[i]
-                p2 = self.population[j]
+        for i in range(len(self.players)):
+            for j in range(i + 1, len(self.players)):
+                p1 = self.players[i]
+                p2 = self.players[j]
+                # ajout d'un 3ème joueur dans la liste pour avoir une partie à 3 joueurs
+                p3 = random.choice(self.players)
+                # On fait jouer le match
+                self.evaluate_match(p1, p2, p3)
                 
-                winner = self.evaluate_match(p1, p2)
-                if winner:
-                    winners[winner] = winners[winner] + 1 if winner in winners else 1
-                else :
-                    winners[p1] = winners[p1] + 0.25 if p1 in winners else 0.25
-                    winners[p2] = winners[p2] + 0.25 if p2 in winners else 0.25
 
-        # Tri des modèles par nombre de victoires
-        sorted_models = sorted(winners.items(), key=lambda item: item[1], reverse=True)
+        # 3. Tri par score accumulé
+        self.players.sort(key=lambda p: p.wins, reverse=True)
         # Sélection des meilleurs
-        parts=self.population_size/10
-        num_selected = max(2, int(self.population_size/parts)) # On garde au moins 2
-        selected_models = [model for model, score in sorted_models[:num_selected]] 
+        num_selected = max(2, int(self.population_size*0.2)) # On garde au moins 2
+        selected_models = [p for p in self.players[:num_selected]] 
         #ajoutés à la prochaine génération
-        next_gen.extend(selected_models)
+        next_gen = list(selected_models)
+        # Sauvegarde du meilleur modèle
+        self.best_model = next_gen[0].model
+        self.best_model.save_model(f"AI/best.pth")
+        print(f"Meilleur score cette génération : {next_gen[0].wins} victoires.")
+        # Réinitialisation des scores des joueurs sélectionnés et génération suivante
+
+        for player in next_gen:
+            player.reset() # Réinitialisation des scores
         # Génération de mutants pour remplir 1/5 de la population
-        while len(next_gen) < int(self.population_size*(parts-1)/parts):
+        while len(next_gen) < int(self.population_size*0.6):
             parent = random.choice(selected_models)
-            child = self.mutate(parent)
-            next_gen.append(child)
+            child = self.mutate(parent.model)
+            joueur_child = AI_Player(model=child, train_mode=False)
+            joueur_child.reset()
+            next_gen.append(joueur_child)
         # Remplissage aléatoire pour le reste
         while len(next_gen) < self.population_size:
-            model = YavalathNN()
-            next_gen.append(model)
-        # sauvegarde du meilleur modèle
-        self.best_model = next_gen[0]
+            joueur_nouveau = AI_Player(train_mode=False,model=YavalathNN())
+            joueur_nouveau.reset()
+            next_gen.append(joueur_nouveau)
         # Mise à jour de la population
-        self.population = next_gen[:self.population_size] # On s'assure de garder la taille fixe
-        
+        self.players = next_gen[:self.population_size] # On s'assure de garder la taille fixe
+        #destruction des joueurs temporaires
         # Sauvegarde du "champion" temporaire (le premier de la liste par exemple)
-        self.best_model.save_model(f"AI/best.pth")
 
 # --- Modification nécessaire dans votre classe Yavalath.py ---
 # Il faut que new_game puisse s'exécuter sans intervention humaine (pas de input())
@@ -280,12 +299,12 @@ if __name__ == "__main__":
     # 1. Configuration de l'entraîneur
     # population_size=20 : 20 IA différentes vont s'affronter
     # mutation_rate=0.05 : 5% de chance qu'un poids change lors d'une mutation
-    trainer = EvolutionTrainer(population_size=50, mutation_rate=0.05, sigma=0.1, autorate=True)
+    trainer = EvolutionTrainer(population_size=20, mutation_rate=0.05, sigma=0.1, autorate=True)
     
     # 2. Création de la première génération (aléatoire)
     trainer.initialize_population()
     # --- CONFIGURATION DE L'HEURE DE FIN ---
-    HEURE_ARRET = 12     # Heure (0-23)
+    HEURE_ARRET = 13     # Heure (0-23)
     MINUTE_ARRET = 0   # Minutes (0-59)
     # ---------------------------------------
     
@@ -322,14 +341,13 @@ if __name__ == "__main__":
             if (gen + 1) % 10 == 0:
                 if not auto:
                     print(f"\n--- Match de démonstration (Gen {gen+1}) ---")
-                    champion_model = trainer.population[0]
+                    champion_model = trainer.best_model
                     
                     # Le champion joue contre une IA aléatoire (fraîchement créée)
-                    champ_player = AI_Player(1, "red", train_mode=False)
-                    champ_player.model = champion_model
+                    champ_player = AI_Player(model=champion_model, train_mode=False)
 
                     
-                    random_player = AI_Player(2, "blue", train_mode=False) # Modèle aléatoire par défaut
+                    random_player = AI_Player(model=YavalathNN(), train_mode=False) # Modèle aléatoire par défaut
                     #random_player = human_player(2, "blue")
                 
                     plateau_demo = Yavalath()
@@ -343,5 +361,5 @@ if __name__ == "__main__":
     print(f"Total : {gen} générations entraînées.")
     print("Entraînement terminé.")
     # Sauvegarde finale du meilleur modèle
-    if trainer.population:
-        trainer.population[0].save_model("AI/champion_final.pth")
+    if trainer.players:
+        trainer.players[0].model.save_model("AI/champion_final.pth")
