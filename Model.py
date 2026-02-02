@@ -141,7 +141,7 @@ class EvolutionTrainer:
         self.population = [] 
         self.best_model = None
         self.autorate = autorate
-    def initialize_population(self, checkpoint="best.pth"):
+    def initialize_population(self, checkpoint="AI/best.pth"):
         """Crée une population. Si un checkpoint existe, on part de lui."""
         self.population = []
         
@@ -265,7 +265,7 @@ class EvolutionTrainer:
         self.population = next_gen[:self.population_size] # On s'assure de garder la taille fixe
         
         # Sauvegarde du "champion" temporaire (le premier de la liste par exemple)
-        self.best_model.save_model(f"best.pth")
+        self.best_model.save_model(f"AI/best.pth")
 
 # --- Modification nécessaire dans votre classe Yavalath.py ---
 # Il faut que new_game puisse s'exécuter sans intervention humaine (pas de input())
@@ -316,7 +316,7 @@ if __name__ == "__main__":
             
             # --- Sauvegarde régulière de sécurité ---
             if gen % 5 == 0:
-                trainer.best_model.save_model(f"{gen}.pth")
+                trainer.best_model.save_model(f"trainning/{gen}.pth")
 
             # (Optionnel) Tous les 10 tours, on fait jouer le champion contre un random pour voir
             if (gen + 1) % 10 == 0:
@@ -344,4 +344,4 @@ if __name__ == "__main__":
     print("Entraînement terminé.")
     # Sauvegarde finale du meilleur modèle
     if trainer.population:
-        trainer.population[0].save_model("champion_final.pth")
+        trainer.population[0].save_model("AI/champion_final.pth")
