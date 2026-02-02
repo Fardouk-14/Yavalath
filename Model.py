@@ -293,7 +293,11 @@ class EvolutionTrainer:
 if __name__ == "__main__":
     from Yavalath import Yavalath
 
-    auto=True  # Mettre à False pour voir les démonstrations
+    auto=False  # Mettre à False pour voir les démonstrations
+    if auto:
+        random_player = AI_Player(model=YavalathNN(), train_mode=False) # Modèle aléatoire par défaut
+        random_player.color="blue"
+                    
     print("Démarrage de l'entraînement...")
     
     # 1. Configuration de l'entraîneur
@@ -346,8 +350,6 @@ if __name__ == "__main__":
                     # Le champion joue contre une IA aléatoire (fraîchement créée)
                     champ_player = AI_Player(model=champion_model, train_mode=False)
 
-                    
-                    random_player = AI_Player(model=YavalathNN(), train_mode=False) # Modèle aléatoire par défaut
                     #random_player = human_player(2, "blue")
                 
                     plateau_demo = Yavalath()
