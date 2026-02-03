@@ -16,11 +16,11 @@ class YavalathNN(nn.Module):
     def __init__(self, input_size=61*4, output_size=61, hidden_size=128):
         super(YavalathNN, self).__init__()
         
-        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc1 = nn.Linear(input_size, hidden_size*2)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(0.3)
         
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size*2, hidden_size)
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(0.3)
         
@@ -293,8 +293,8 @@ class EvolutionTrainer:
 if __name__ == "__main__":
     from Yavalath import Yavalath
 
-    auto=False  # Mettre à False pour voir les démonstrations
-    if auto:
+    auto=True  # Mettre à False pour voir les démonstrations
+    if not auto:
         random_player = AI_Player(model=YavalathNN(), train_mode=False) # Modèle aléatoire par défaut
         random_player.color="blue"
                     
