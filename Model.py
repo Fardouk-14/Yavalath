@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from Yavalath import player
 from Yavalath import human_player
+from SmartPlayer import SmartPlayer
 
 
 
@@ -348,7 +349,7 @@ if __name__ == "__main__":
                     champion_model = trainer.best_model
                     
                     # Le champion joue contre une IA aléatoire (fraîchement créée)
-                    champ_player = AI_Player(model=champion_model, train_mode=False)
+                    champ_player = SmartPlayer(1, "red")
 
                     #random_player = human_player(2, "blue")
                 
