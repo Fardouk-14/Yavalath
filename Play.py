@@ -55,23 +55,26 @@ def jouer_contre_champion():
                 
             elif choix == '3':
                 print("\nVous êtes Bleu, le Bot est Vert.")
+                difficulte = input("Choisissez votre niveau de difficulté pour le Bot Vert (1-5, 1 = facile, 5 = difficile) : ")
                 p1 = human_player(1, "blue")
-                p2 = SmartPlayer(2, "#00b500")
+                p2 = SmartPlayer(2, "#00b500", difficulty=int(difficulte))
                 plateau.new_game([p1, p2], parties=1, display=True)
                 
             elif choix == '4':
                 print("\nLe Bot est Vert, vous êtes Bleu.")
-                p1 = SmartPlayer(1, "#00b500")
+                difficulte = input("Choisissez votre niveau de difficulté pour le Bot Vert (1-5, 1 = facile, 5 = difficile) : ")
+                p1 = SmartPlayer(1, "#00b500", difficulty=int(difficulte))
                 p2 = human_player(2, "blue")
                 plateau.new_game([p1, p2], parties=1, display=True)
                 
             elif choix == '5':
+                difficulte = input("Choisissez votre niveau de difficulté pour le Bot Vert (1-5, 1 = facile, 5 = difficile) : ")
                 if not model_file:
                     print("Pas de modèle NN disponible. Entraînez d'abord avec Model.py")
                     continue
                 print("\nDémonstration : IA (NN) Rouge vs Bot Vert")
                 p1 = AI_Player(player_id=1, color="red", model_path=model_file)
-                p2 = SmartPlayer(2, "#00b500")
+                p2 = SmartPlayer(2, "#00b500", difficulty=int(difficulte))
                 plateau.new_game([p1, p2], parties=3, display=True)
                 
             else:

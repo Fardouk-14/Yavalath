@@ -1,17 +1,19 @@
 # SmartPlayer.py
-from Yavalath import player, Yavalath
+from Yavalath import player, Yavalath, make_grid
 from random import choice
+from PlayerClient import PlayerClient
 
-class SmartPlayer(player):
-    def __init__(self, id, color, difficulty=5):
-        super().__init__(id, color)
+class SmartPlayer(PlayerClient):
+    def __init__(self, server_url, name="SmartBot", difficulty=5):
+        super().__init__(server_url, name=f"{name}_d{difficulty}")
         self.difficulty = difficulty
+        self.grid,self.cases_by_id,self.cases_by_coord = make_grid()  # Pour les évaluations de coups
     
-    def jouer(self, plateau):
-        best_move = self.choisir_coup(self.evaluate_best_move(plateau))
-        if plateau.jouer_coup(best_move, self):
-            self.mémoriser_case(plateau, best_move)
+    # Override de choose_move pour utiliser notre IA heuristique
+    def choose_move(self, plateau_state):
+        best_move = self.choisir_coup(self.evaluate_best_move(plateau_state))
         return best_move
+    
     def choisir_coup(self, coups):
         """Choisit le coup avec le meilleur score."""
         if not coups:
@@ -21,16 +23,27 @@ class SmartPlayer(player):
         
         return choice(best_moves)
 
-    def evaluate_best_move(self, plateau, recursion_depth=None):
+    def evaluate_best_move(self, plateau_state, recursion_depth=None, joueur_id=None):
+        if joueur_id is None:
+            joueur_id = self.player_id
+        # plateau_state est un dictionnaire avec les clés 'ids' et 'plateau' :
+        # le champ ids contient la liste des ids des joueurs, 
+        # le champ "loser_id" qui indique l'id du joueur qui a perdu (ou null si pas encore de perdant),
+        # le champ plateau contient chacune des 61 cases du plateau :
+        # un 0 pour les cases vides, 
+        # un 1 pour les cases occupées par le joueur 1 (premier id dans ids),
+        # un 2 pour les cases occupées par le joueur 2 (deuxième id dans ids),
+        # un 3 pour les cases occupées par le joueur 3 (troisième id dans ids).
         if recursion_depth is None:
             recursion_depth = self.difficulty
-        legal_ids = plateau.get_empty_cases()
+        # Récupérer les coups légaux
+        legal_ids = [case_id for case_id in self.grid if plateau_state['plateau'][self.grid.index(case_id)] == 0]
         if not legal_ids:
             return {}
         
         coups = {}
         for case_id in legal_ids:
-            coups[case_id] = self.evaluate_move(plateau, case_id)
+            coups[case_id] = self.evaluate_move(plateau_state, case_id)
         
         # Condition d'arrêt
         if recursion_depth <= 0:
@@ -42,48 +55,68 @@ class SmartPlayer(player):
         for move, base_score in top_moves:
             if base_score <= -10000 or base_score >= 10000:
                 continue  # Pas besoin de simuler victoire/défaite immédiate
+            score_ajouté = 0
+            # Simuler le coup en dupliquant le dictionnaire de l'état du plateau
+            new_plateau = {key: value for key, value in plateau_state.items()}
+            # copie le plateau 
+            new_plateau['plateau'] = new_plateau['plateau'][:]
+            new_plateau['ids'] = new_plateau['ids'][:]
+            new_plateau['loser_id'] = new_plateau['loser_id']
+            # Trouver notre index de joueur
+            player_index = new_plateau['ids'].index(joueur_id)
+            # Simuler notre coup
+            new_plateau['plateau'][self.grid.index(move)] = player_index + 1  # +1 car les joueurs sont codés à partir de 1 dans le plateau
+            # décaler les ids pour me retrouver en position 0
+            joueurs = new_plateau['ids'][player_index:] + new_plateau['ids'][:player_index]
+            # supprimer mon id de la liste ainsi que les losers
+            joueurs_en_jeu = [j for j in joueurs if j != joueur_id and j != new_plateau['loser_id']]
+
+
+
+            # on simule un tour des adversaires
+            for j in joueurs_en_jeu:
+                # Simuler les coups futurs dans la partie
+                adv_coups = self.evaluate_best_move(new_plateau, recursion_depth - 1, joueur_id=j)
+                if adv_coups:
+                    # on récupère le meilleur coup de l'adversaire
+                    # On suppose que l'adversaire joue son meilleur coup, donc on prend le score négatif de ce coup
+                    # on applique une pondération pour ne pas surévaluer les coups futurs
+                    score_ajouté = - max(adv_coups.values()) /3.0
+                    #on joue le coup de l'adversaire pour simuler la partie
+                    best_adv = max(adv_coups, key=adv_coups.get)
+                    new_plateau['plateau'][self.grid.index(best_adv)] = new_plateau['ids'].index(j) + 1  # +1 car les joueurs sont codés à partir de 1 dans le plateau
+                    # vérifier si l'adversaire a perdu via son score 
+                    if score_ajouté <= 10000/3.0:
+                        if new_plateau['loser_id'] is None and len(joueurs_en_jeu) > 1:
+                            new_plateau['loser_id'] = j  # Simuler la défaite de cet adversaire
+                        else:
+                            score_ajouté = 10000/2.0  # Si un adversaire a déjà perdu, on considère que c'est une victoire pour nous
+                    
+            #on ajoute le score ajouté à notre score de base pour ce coup
+            coups[move] += score_ajouté
             
-            # Simuler le coup
-            new_plateau = self.plateau_simulé(plateau, move)
-            
-            # Simuler réponse adversaire (meilleur coup)
-            for p in new_plateau.players:
-                if p.get_id() != self.get_id() and not p.has_lost:
-                    adv_coups = {}
-                    for adv_move in new_plateau.get_empty_cases():
-                        adv_coups[adv_move] = self.evaluate_move_for(new_plateau, adv_move, p)
-                    if adv_coups:
-                        best_adv = max(adv_coups, key=adv_coups.get)
-                        new_plateau.jouer_coup(best_adv, p)
-                        # Copier l'état du joueur simulé
-                        break
-            
-            # Récursion
-            future_scores = self.evaluate_best_move(new_plateau, recursion_depth - 1)
-            if future_scores:
-                future = max(future_scores.values())
-                coups[move] = base_score + future * 0.5  # Pondération
-        
         return coups
     
-    def evaluate_move(self, plateau, case_id):
+    def evaluate_move(self, plateau_state, case_id, playerid=None):
+        if playerid is None:
+            playerid = self.player_id
         """Évalue un coup potentiel. Score élevé = bon coup."""
-        case = plateau.get_case_by_id(case_id)
+        case = self.cases_by_id.get(case_id)
         q, r = case.get_coordonnées()
         score = 0
         
         # 1. Vérifie si ce coup nous fait PERDRE (3 en ligne)
-        if self.creates_line(plateau, q, r, self, 3):
+        if self.creates_line(plateau_state, q, r, playerid, 3):
             return -10000  # Éviter à tout prix
         
         # 2. Vérifie si ce coup nous fait GAGNER (4 en ligne)
-        if self.creates_line(plateau, q, r, self, 4):
+        if self.creates_line(plateau_state, q, r, playerid, 4):
             return 10000  # Victoire immédiate
         
         # 3. Vérifie si on bloque une victoire adverse (4 en ligne ennemi)
-        for p in plateau.players:
+        for p in plateau_state['players']:
             if p != self:
-                if self.creates_line(plateau, q, r, p, 4):
+                if self.creates_line(plateau_state, q, r, p, 4):
                     score += 5000  # Bloquer victoire adverse
 
         # 3.5 Bloquer un 3 adverse (les forcer à perdre)

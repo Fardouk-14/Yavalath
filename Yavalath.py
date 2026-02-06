@@ -65,6 +65,26 @@ class case:
                 adj_id = case.get_an_id(q_adj, r_adj)
                 adjacentes.append(adj_id)
         return adjacentes
+        
+def make_grid():
+    coordonnées=[]
+    for r in range(-4,5):
+        for q in range(-4,5):
+            if -r - q >= -4 and -r - q <= 4:
+                coordonnées.append((q,r))
+    cases_by_id={}
+    cases_by_coord={}
+
+    for q,r in coordonnées:
+        q_offset = q + 4
+        r_offset = r + 4
+        gray_q = graycode(q_offset)
+        gray_r = graycode(r_offset)
+        code=(gray_q << 4) | gray_r
+        case_obj=case(q,r,code)
+        cases_by_id[code]=case_obj
+        cases_by_coord[(q,r)]=case_obj
+    return sorted(cases_by_id.keys()), cases_by_id, cases_by_coord
 
 class player:
     def __init__(self, id, color):
@@ -183,8 +203,7 @@ class Yavalath:
     def __init__(self):
         self.cases_by_id={}
         self.cases_by_coord={}
-        self.make_grid()
-        self.sorted_cases_id=sorted(self.cases_by_id.keys())
+        self.sorted_cases_id, self.cases_by_id, self.cases_by_coord = make_grid()
 
         # 1. Dictionnaire pour trouver l'index (0-60) à partir de l'ID rapidement
         self.id_to_index = {cases_id: i for i, cases_id in enumerate(self.sorted_cases_id)}
