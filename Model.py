@@ -294,10 +294,10 @@ class EvolutionTrainer:
 if __name__ == "__main__":
     from Yavalath import Yavalath
 
-    auto=True  # Mettre à False pour voir les démonstrations
+    auto=False  # Mettre à False pour voir les démonstrations
     if not auto:
-        random_player = AI_Player(model=YavalathNN(), train_mode=False) # Modèle aléatoire par défaut
-        random_player.color="blue"
+        random_player = SmartPlayer(1, "green")
+
                     
     print("Démarrage de l'entraînement...")
     
@@ -309,7 +309,7 @@ if __name__ == "__main__":
     # 2. Création de la première génération (aléatoire)
     trainer.initialize_population()
     # --- CONFIGURATION DE L'HEURE DE FIN ---
-    HEURE_ARRET = 13     # Heure (0-23)
+    HEURE_ARRET = 20     # Heure (0-23)
     MINUTE_ARRET = 0   # Minutes (0-59)
     # ---------------------------------------
     
@@ -349,7 +349,7 @@ if __name__ == "__main__":
                     champion_model = trainer.best_model
                     
                     # Le champion joue contre une IA aléatoire (fraîchement créée)
-                    champ_player = SmartPlayer(1, "red")
+                    champ_player = AI_Player(model=champion_model, train_mode=False, player_id=1, color="red")
 
                     #random_player = human_player(2, "blue")
                 

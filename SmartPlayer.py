@@ -20,7 +20,7 @@ class SmartPlayer(player):
         
         return choice(best_moves)
 
-    def evaluate_best_move(self, plateau, recursion_depth=3):
+    def evaluate_best_move(self, plateau, recursion_depth=5):
         legal_ids = plateau.get_empty_cases()
         if not legal_ids:
             return {}
