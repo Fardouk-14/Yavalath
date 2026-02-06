@@ -254,7 +254,10 @@ class EvolutionTrainer:
                 # On fait jouer le match
                 self.evaluate_match(p1, p2, p3)
                 
-
+        # 2.5 on filtre les joueurs qui sont des SmartPlayer (si on en a ajouté pour remplir la population) pour ne pas les sélectionner
+        for player in self.players:
+            if isinstance(player, SmartPlayer):
+                player.wins = -1  # On les met en bas du classement pour ne pas les sélectionner
         # 3. Tri par score accumulé
         self.players.sort(key=lambda p: p.wins, reverse=True)
         # Sélection des meilleurs
@@ -278,8 +281,13 @@ class EvolutionTrainer:
             joueur_child.reset()
             next_gen.append(joueur_child)
         # Remplissage aléatoire pour le reste
-        while len(next_gen) < self.population_size:
+        while len(next_gen) < int(self.population_size*0.8):
             joueur_nouveau = AI_Player(train_mode=False,model=YavalathNN())
+            joueur_nouveau.reset()
+            next_gen.append(joueur_nouveau)
+        while len(next_gen) < self.population_size:
+            bot_difficulty = random.choice([1,2,3,4,5,1,2,3,4,1,2,3,1,2,1])
+            joueur_nouveau = SmartPlayer(id=len(next_gen), color="green", difficulty=bot_difficulty)
             joueur_nouveau.reset()
             next_gen.append(joueur_nouveau)
         # Mise à jour de la population

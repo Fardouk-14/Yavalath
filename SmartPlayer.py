@@ -3,8 +3,9 @@ from Yavalath import player, Yavalath
 from random import choice
 
 class SmartPlayer(player):
-    def __init__(self, id, color):
+    def __init__(self, id, color, difficulty=5):
         super().__init__(id, color)
+        self.difficulty = difficulty
     
     def jouer(self, plateau):
         best_move = self.choisir_coup(self.evaluate_best_move(plateau))
@@ -20,7 +21,9 @@ class SmartPlayer(player):
         
         return choice(best_moves)
 
-    def evaluate_best_move(self, plateau, recursion_depth=5):
+    def evaluate_best_move(self, plateau, recursion_depth=None):
+        if recursion_depth is None:
+            recursion_depth = self.difficulty
         legal_ids = plateau.get_empty_cases()
         if not legal_ids:
             return {}
