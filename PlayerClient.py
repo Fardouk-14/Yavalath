@@ -4,15 +4,40 @@ from fastapi import FastAPI
 import requests
 
 class PlayerClient:
-    def __init__(self, server_url, name="PlayerClient"):
+    def __init__(self, name="PlayerClient"):
         self.name = name
-        self.player_id = requests.get(f"{server_url}/register").json().get("player_id")  # Identifiant unique pour ce joueur
-        self.server_url = server_url
+        self.server_url = ""
+        self.player_id = None
         self.app = FastAPI()
         self.register_routes()
 
-    def get_id(self):
+    def get_id(self,server_url):
+        self.server_url = server_url
+        # Envoyer une requete pour s'enregistrer auprès du serveur et récupérer un player_id unique
+        # on envoie son nom pour que le serveur puisse l'associer à l'id du joueur
+        # si on dispode déjà d'un player_id enregistré localement, on peut l'envoyer au serveur pour récupérer les statistiques associées à ce player_id
+        
+        for i in range(3):
+            resp = None
+            if self.player_id:
+                print(f"Player ID déjà enregistré localement : {self.player_id}. Envoi au serveur pour récupérer les statistiques associées.")
+                resp = requests.post(f"{self.server_url}/register", json={"name": self.name, "player_id": self.player_id})
+                break
+            else: 
+                resp = requests.post(f"{self.server_url}/register", json={"name": self.name})
+                break
+            if resp.status_code == 200:
+                raise Exception(f"Erreur lors de l'enregistrement auprès du serveur : {resp.text}")
+        data = resp.json()
+        self.player_id = data.get("player_id")
+        self.victoires = data.get("victoires", 0)
+        self.défaites = data.get("défaites", 0)
+        self.nuls = data.get("nuls", 0)
+        print(f"Enregistré auprès du serveur avec player_id : {self.player_id}")
+
         return self.player_id
+    
+    def connect_to_server(self):
     
     def get_plateau_state(self, plateau_id):
         # Récupère l'état du plateau depuis le serveur sous forme d'un dictionnaire JSON 
@@ -36,12 +61,6 @@ class PlayerClient:
             return None
         #convertir la réponse en dictionnaire Python
         return resp.json()
-
-    def get_legal_moves(self, plateau_id):
-        # Récupère les coups légaux depuis le serveur
-        resp = requests.get(f"{self.server_url}/legal_moves/{plateau_id}")
-        return resp.json()
-    
 
     def choose_move(self, plateau_state):
         pass # À implémenter : logique pour choisir un coup en fonction de l'état du plateau

@@ -23,7 +23,7 @@ class SmartPlayer(PlayerClient):
         
         return choice(best_moves)
 
-    def evaluate_best_move(self, plateau_state, recursion_depth=None, joueur_id=None):
+    def evaluate_best_move(self, plateau_state, recursion_depth=None, joueur_id=None,first_call=True):
         if joueur_id is None:
             joueur_id = self.player_id
         # plateau_state est un dictionnaire avec les clés 'ids' et 'plateau' :
@@ -49,8 +49,11 @@ class SmartPlayer(PlayerClient):
         if recursion_depth <= 0:
             return coups
         
+        top_moves = coups.items()
         # Évaluer en profondeur seulement les meilleurs coups (pour la vitesse)
-        top_moves = sorted(coups.items(), key=lambda x: x[1], reverse=True)[:5]
+        if not first_call:
+            top_moves = sorted(coups.items(), key=lambda x: x[1], reverse=True)[:5]
+
         
         for move, base_score in top_moves:
             if base_score <= -10000 or base_score >= 10000:
@@ -76,7 +79,7 @@ class SmartPlayer(PlayerClient):
             # on simule un tour des adversaires
             for j in joueurs_en_jeu:
                 # Simuler les coups futurs dans la partie
-                adv_coups = self.evaluate_best_move(new_plateau, recursion_depth - 1, joueur_id=j)
+                adv_coups = self.evaluate_best_move(new_plateau, recursion_depth - 1, joueur_id=j, first_call=False)
                 if adv_coups:
                     # on récupère le meilleur coup de l'adversaire
                     # On suppose que l'adversaire joue son meilleur coup, donc on prend le score négatif de ce coup
@@ -115,13 +118,13 @@ class SmartPlayer(PlayerClient):
         
         # 3. Vérifie si on bloque une victoire adverse (4 en ligne ennemi)
         for p in plateau_state['players']:
-            if p != self:
+            if p != playerid:
                 if self.creates_line(plateau_state, q, r, p, 4):
                     score += 5000  # Bloquer victoire adverse
 
         # 3.5 Bloquer un 3 adverse (les forcer à perdre)
-        for p in plateau.players:
-            if p != self:
+        for p in plateau_state['players']:
+            if p != playerid:
                 if self.creates_line(plateau, q, r, p, 3):
                     score += 100  # Moins prioritaire que bloquer 4
         
