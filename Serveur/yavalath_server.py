@@ -37,7 +37,7 @@ class YavalathServer:
     def initialize_db(self):
         cursor = self.db_connection.cursor()
         cursor.execute('''
-            CREATE TABLE player_stats (
+            CREATE TABLE players (
                 player_id TEXT PRIMARY KEY,
                 player_name TEXT NOT NULL,
                 victories INTEGER DEFAULT 0,
@@ -45,11 +45,46 @@ class YavalathServer:
                 draws INTEGER DEFAULT 0,
                 last_ip TEXT,
                 last_active TIMESTAMP,
+                connected BOOLEAN DEFAULT 0,
                 UNIQUE(player_id)
-            )
+            );
         ''')
+        cursor.execute('''
+            CREATE TABLE game_history (
+                game_id TEXT PRIMARY KEY,
+                player1_id TEXT NOT NULL,
+                player2_id TEXT NOT NULL,
+                player3_id TEXT,
+                winner_id TEXT,
+                timestamp TIMESTAMP,
+                FOREIGN KEY(player1_id) REFERENCES players(player_id),
+                FOREIGN KEY(player2_id) REFERENCES players(player_id),
+                FOREIGN KEY(player3_id) REFERENCES players(player_id),
+                FOREIGN KEY(winner_id) REFERENCES players(player_id)
+                unique(game_id)
+            );'''
+        )
+        cursor.execute('''
+            CREATE TABLE running_games (
+                game_id TEXT PRIMARY KEY,
+                player1_id TEXT NOT NULL,
+                player2_id TEXT NOT NULL,
+                player3_id TEXT,
+                start_time TIMESTAMP,
+                FOREIGN KEY(player1_id) REFERENCES players(player_id),
+                FOREIGN KEY(player2_id) REFERENCES players(player_id),
+                FOREIGN KEY(player3_id) REFERENCES players(player_id)
+                unique(game_id)
+            );
+            '''
+        )
         self.db_connection.commit()    
-
+    def isUnknown(self, player_id):
+        cursor = self.db_connection.cursor()
+        cursor.execute("SELECT * FROM players WHERE player_id = ?", (player_id,))
+        existing_player = cursor.fetchone()
+        return existing_player is None
+    
     def ask_player_to_play(self, plateau_id, player_id):
         # Cette méthode est appelée par les instances de ServerPlayer pour demander au serveur de récupérer le coup du joueur
         # Le serveur envoie une requete au client correspondant pour lui demander de jouer, en lui fournissant l'état actuel du plateau
@@ -69,7 +104,7 @@ class YavalathServer:
             
             # Si un player_id est fourni, on vérifie s'il existe déjà dans la base de données
             cursor = self.db_connection.cursor()
-            cursor.execute("SELECT * FROM player_stats WHERE player_id = ?", (player_id,))
+            cursor.execute("SELECT * FROM players WHERE player_id = ?", (player_id,))
             existing_player = cursor.fetchone()
             if existing_player:
                 # Si le player_id existe, on retourne les statistiques associées
@@ -82,23 +117,26 @@ class YavalathServer:
                 })
             else:
                 # Si le player_id n'existe pas, on enregistre un nouveau joueur avec ce player_id
-                cursor.execute("INSERT INTO player_stats (player_id, player_name, victories, defeats, draws) VALUES (?, ?, 0, 0, 0)", (player_id, name))
+                cursor.execute("INSERT INTO players (player_id, player_name, victories, defeats, draws) VALUES (?, ?, 0, 0, 0)", (player_id, name))
                 self.db_connection.commit()
-                return jsonify({"player_id": player_id, "player_name": name, "victoires": 0, "défaites": 0, "nuls": 0})
+                return jsonify({"player_id": player_id, "player_name": name, "victoires": 0, "défaites": 0, "nuls": 0}), 200
             
-
         @self.app.route('/new_game', methods=['POST'])
         def new_game():
             data = request.get_json()
             player_id = data.get("player_id")
             if not player_id:
                 return jsonify({"error": "Player ID is required"}), 400
+            if self.isUnknown(player_id):
+                return jsonify({"error": "Player unknown"}), 400
+                     
+            
             
             plateau_id = str(uuid.uuid4())  # Génère un identifiant unique pour le plateau
             self.plateaux[plateau_id] = {'jeu': Yavalath(), 'players': [], 'loser': None, 'board': [None] * 61}  # Crée une nouvelle instance de Yavalath pour ce plateau
             self.plateaux[plateau_id]['players'].append(player_id)  # Ajoute le joueur à la liste des joueurs du plateau
             
-            return jsonify({"plateau_id": plateau_id})
+            return jsonify({"plateau_id": plateau_id}), 200
 
         @self.app.route('/plateau/<plateau_id>', methods=['GET'])
         def get_plateau(plateau_id):
